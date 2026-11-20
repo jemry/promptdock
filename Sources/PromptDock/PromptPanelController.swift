@@ -154,8 +154,9 @@ final class PromptPanelController: NSObject, NSWindowDelegate {
             onCommand(command)
             return true
         case .select(let index):
-            // 数字直选：仅选择阶段且搜索框为空时生效（正在输入时数字是内容，放行给输入框）
-            guard model.phase == .choosing, model.query.isEmpty,
+            // 数字直选：仅选择阶段且搜索框为空时生效（正在输入时数字是内容，放行给输入框）。
+            // 输入回退模式下输入框是待处理内容，首字符可能就是数字（如「1+1 等于几」），一律放行
+            guard model.phase == .choosing, model.query.isEmpty, !model.isInputFallbackMode,
                   model.results.indices.contains(index - 1) else { return false }
             model.selection = index - 1
             onCommand(.paste)

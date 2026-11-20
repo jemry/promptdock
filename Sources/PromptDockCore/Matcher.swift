@@ -65,18 +65,21 @@ public enum Matcher {
 
     private static func matchScore(normalizedQuery q: String, prompt: Prompt) -> Double {
         guard !q.isEmpty else { return 0 }
-        var candidates: [(Double, [String])] = [
+        let candidates: [(Double, [String])] = [
             (titleWeight, [prompt.title]),
             (keywordWeight, prompt.keywords),
             (tagWeight, prompt.tags),
             (contentWeight, [prompt.content]),
         ]
-        // 中文标题的拼音索引（spec 10）：pcwt / paichawenti 都能命中「排查问题」
-        if let pinyin = Pinyin.index(for: prompt.title) {
-            candidates.append((pinyinFullWeight, [pinyin.full]))
-            candidates.append((pinyinInitialsWeight, [pinyin.initials]))
-        }
         var best = 0.0
+        // 中文标题的拼音索引（spec 7.2）：pcwt / paichawenti 都能命中「排查问题」。
+        // 只认相等/前缀/连续子串，不走子序列：拼音串只有字母，ui、ai 这类短查询按子序列几乎处处命中
+        if let pinyin = Pinyin.index(for: prompt.title) {
+            for (weight, text) in [(pinyinFullWeight, pinyin.full), (pinyinInitialsWeight, pinyin.initials)] {
+                let s = score(normalizedQuery: q, text: text)
+                if s >= 0.75 { best = max(best, weight * s) }
+            }
+        }
         for (weight, texts) in candidates where weight > best {
             for text in texts {
                 best = max(best, weight * score(normalizedQuery: q, text: normalize(text)))

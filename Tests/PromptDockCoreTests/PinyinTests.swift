@@ -53,6 +53,12 @@ struct PinyinSearchTests {
         #expect(Matcher.matchScore(query: "recap", prompt: prompt("recap")) > 0)
     }
 
+    @Test func scatteredLettersDoNotHitPinyin() {
+        // shujufenxi 里 u…i 是子序列，但拼音档只认连续命中，否则短英文查询会误中大量中文标题
+        #expect(Matcher.matchScore(query: "ui", prompt: prompt("数据分析")) == 0)
+        #expect(Matcher.matchScore(query: "fenxi", prompt: prompt("数据分析")) > 0)
+    }
+
     @Test func chineseQueryUnaffected() {
         #expect(Matcher.matchScore(query: "排查", prompt: prompt("排查问题")) > 0)
     }

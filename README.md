@@ -34,7 +34,7 @@ macOS 菜单栏提示词管理器。在任何输入框里按 **⌥Space** 呼出
 3. 按提示授予「辅助功能」权限，粘贴和读取选中文字都依赖它
 4. 按 ⌥Space 试试；使用选中文字动作前，在菜单栏 → 设置… → 模型服务 中填入 API Key
 
-**升级提示**：dmg 与本地编译统一用固定证书 `PromptDock Dev` 签名，bundle ID 稳定，正常升级**不需要**重新授权。只有以下情况才需要重授：换 Mac、重装系统、手动改过 bundle ID、或系统在设置里删掉了授权条目。若某次升级后权限失效，先在系统设置里删掉旧 PromptDock 条目、重启「系统设置」App 刷新列表，再重新添加。
+**升级提示**：每个版本的签名都不同，升级后需要重新授予辅助功能权限。在系统设置 → 隐私与安全性 → 辅助功能 中删除旧的 PromptDock，再重新添加。
 
 ## 从源码编译
 
@@ -55,7 +55,7 @@ macOS 的辅助功能授权和应用签名绑定。用固定的自签名证书�
 ```sh
 git clone https://github.com/jemry/promptdock.git
 cd promptdock
-make install      # 编译、签名，安装到 /Applications 并启动（TCC 授权绑定路径+签名，装定一个位置别来回换）
+make install      # 编译、签名，安装到 ~/Applications 并启动
 ```
 
 首次启动后：
@@ -144,7 +144,7 @@ prompts:
 make test         # 单元测试
 make install      # 编译并重新安装
 make hooks        # 启用提交前泄露检查（每个 clone 执行一次，需要 brew install gitleaks）
-make dmg          # 打包发布用的 dmg（通用二进制、固定证书签名，授权不失效）
+make dmg          # 打包发布用的 dmg（通用二进制、临时签名）
 make lint         # 手动执行泄露检查：密钥、个人信息黑名单、禁止提交的文件类型
 ```
 

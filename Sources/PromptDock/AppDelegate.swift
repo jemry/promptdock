@@ -379,12 +379,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 let file = dir.appendingPathComponent(VocabularyNotebook.fileName())
                 let existing = try? String(contentsOf: file, encoding: .utf8)
-                var content = existing ?? VocabularyNotebook.template()
+                let content = existing ?? VocabularyNotebook.template()
                 let entry = VocabularyNotebook.entry(
                     title: title, phonetic: phonetic,
                     summary: summary ?? trimmedExplanation)
                 guard let updated = VocabularyNotebook.insert(entry: entry, title: title, into: content) else {
-                    Log.info("词汇表本月已有「\(title)」，跳过重复收藏")
+                    Log.info("词汇表本月已有同标题词条（\(title.count) 字），跳过重复收藏")   // 标题取自选区，日志不记原文
                     completion("词汇表本月已有「\(title)」，未重复收藏")
                     return
                 }
@@ -812,7 +812,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func menuHistory() {
         historyWindow.show(
-            entries: (try? historyStoreIfEnabled()?.recent()) ?? [],
+            entries: historyStoreIfEnabled()?.recent() ?? [],
             onCopy: { PasteService.copy($0) },
             onClear: { [weak self] in
                 self?.historyStoreIfEnabled()?.clear()

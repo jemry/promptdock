@@ -1,6 +1,6 @@
 APP      := build/PromptDock.app
 SIGN_ID  ?= PromptDock Dev
-INSTALL  := /Applications/PromptDock.app   # 与实际运行位置一致；改这里前先想清楚 TCC 授权绑定的是路径+签名
+INSTALL  := $(HOME)/Applications/PromptDock.app
 ICON     := build/AppIcon.icns
 # 版本号取最近的 git tag（v0.1.0 → 0.1.0），没有 tag 时为 0.1.0；构建号为提交数
 VERSION  ?= $(or $(shell git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'),0.1.0)
@@ -53,10 +53,10 @@ install: sign
 	@sleep 1
 	open $(INSTALL)
 
-# 发布用安装包：通用二进制（Apple 芯片 + Intel）
-# 签名沿用 SIGN_ID（默认 PromptDock Dev 固定证书）；不要用 ad-hoc，否则装后辅助功能授权会失效
+# 发布用安装包：通用二进制（Apple 芯片 + Intel）、临时签名（未经 Apple 公证，见 README「下载安装」）
+# 不能用 PromptDock Dev：CI runner 和下载用户的机器上都没有这张自签名证书
 dmg:
-	$(MAKE) sign SWIFT_FLAGS="--arch arm64 --arch x86_64"
+	$(MAKE) sign SWIFT_FLAGS="--arch arm64 --arch x86_64" SIGN_ID=-
 	lipo -archs $(APP)/Contents/MacOS/PromptDock
 	rm -rf build/dmg $(DMG)
 	mkdir -p build/dmg

@@ -120,7 +120,7 @@ struct PromptPanelView: View {
             Image(systemName: isActionMode ? "wand.and.stars" : "magnifyingglass").foregroundStyle(.secondary)
             TextField(
                 isActionMode
-                    ? (model.isInputFallbackMode ? "输入要处理的内容…（↑↓ 或数字键选动作，↩ 执行）" : "选择要执行的动作…")
+                    ? (model.isInputFallbackMode ? "输入要处理的内容…（↑↓ 选动作，↩ 执行）" : "选择要执行的动作…")
                     : "搜索提示词…",
                 text: $model.query
             )
@@ -259,7 +259,7 @@ struct PromptPanelView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 // 数字角标：提示可按数字键直选（0 = 第 10 条）；搜索中数字是输入内容，角标隐藏
-                if let number, model.query.isEmpty, model.phase == .choosing, !model.isFormActive {
+                if let number, model.query.isEmpty, model.phase == .choosing, !model.isFormActive, !model.isInputFallbackMode {
                     Text("\(number == 10 ? 0 : number)")
                         .font(.caption2.monospaced().weight(.medium))
                         .foregroundStyle(selected ? Color.dockAccent : Color.secondary.opacity(0.6))
