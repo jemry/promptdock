@@ -351,7 +351,7 @@ API Key 按服务存在系统钥匙串（service `local.jemry.promptdock`，acco
 
 **朗读音标（2026-11-17）**：开始朗读时若文本是短英文（≤4 个词、不含 CJK，`SpeechPhonetics.shouldLookup`），异步调默认模型要美式 IPA 与简要中文释义（≤12 字），返回经 `SpeechPhonetics.normalize` 清洗（取第一段 `/.../` 作音标、其后首个非空行剥标签作释义，无效为 nil）。显示固定布局：音标（等宽）+ 释义在左，🔊 按钮钉在面板右端不随内容伸缩。查询失败或无效静默不显示，不影响朗读；换朗读、返回列表、重开面板时清空，迟到结果按令牌丢弃。长文本与中文不查音标。
 
-**收藏到 Obsidian 词汇表（2026-11-17）**：结果页（动作结果与 ✨ 跑模型）底栏 ⭐ 收藏本次原文 + 模型解释 + 当前音标释义。收藏分两步：先把解释发给默认模型提炼成精简要点（首行一句核心释义 ≤25 字 + 1-4 条「- 」要点行，失败回退原文解释不中断收藏），提炼期间 ⭐ 转进度圈防连点；再写入 vault 下的 `词汇表/YYYY-MM.md`（每月一文件，vault 由 `ObsidianVaultLocator` 自动探测：iCloud Obsidian 目录 → ~/Documents → 家目录，找含 `.obsidian` 的目录；找不到提示）。**月文件内按词条标题去重**（标题行 `### {title}` 全词匹配，跨天也拦），重复时 notice 提示未重复收藏。文件结构：frontmatter + 标题 + 插入锚点，词条按天分组（`## MM-dd`），月内与天内均最新在最上。词条为精简卡：三级标题行（原文首行截 40 字 + 音标 + 释义）+ 提炼正文，无 callout 无时间戳。成功后 ⭐ 变实心。生成/插入/去重逻辑在 `VocabularyNotebook`（Core，带测试），写盘走原子写。
+**收藏到 Obsidian 词汇表（2026-11-17）**：结果页（动作结果与 ✨ 跑模型）底栏 ⭐ 收藏本次原文 + 模型解释 + 当前音标释义。收藏分两步：先把解释发给默认模型提炼成精简要点（首行一句核心释义 ≤25 字 + 1-4 条「- 」要点行，失败回退原文解释不中断收藏），提炼期间 ⭐ 转进度圈防连点；再写入 vault 下的 `词汇表/YYYY-MM.md`（每月一文件，vault 由 `ObsidianVaultLocator` 自动探测：先读 Obsidian 自己的 vault 列表 `~/Library/Application Support/obsidian/obsidian.json`，取仍存在的、当前打开（`open: true`）优先、其次最近使用（`ts` 最大）的 vault（`ObsidianVaults.preferred`，Core 带测试）；读不到时兜底扫描 iCloud Obsidian 目录与 ~/Documents，目录本身是 vault 优先于子目录（子目录可能残留旧的 `.obsidian`，2026-11-20 踩坑：写进了 `00 Inbox/词汇表/`）；都找不到提示）。**月文件内按词条标题去重**（标题行 `### {title}` 全词匹配，跨天也拦），重复时 notice 提示未重复收藏。文件结构：frontmatter + 标题 + 插入锚点，词条按天分组（`## MM-dd`），月内与天内均最新在最上。词条为精简卡：三级标题行（原文首行截 40 字 + 音标 + 释义）+ 提炼正文，无 callout 无时间戳。成功后 ⭐ 变实心。生成/插入/去重逻辑在 `VocabularyNotebook`（Core，带测试），写盘走原子写。
 
 ### 9.6 调用历史（2026-11-17）
 
