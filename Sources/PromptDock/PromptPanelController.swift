@@ -32,6 +32,7 @@ final class PromptPanelController: NSObject, NSWindowDelegate {
     var onCommand: (PanelCommand) -> Void = { _ in }
     /// 面板关闭（Esc、点击外部、被隐藏）时调用，用于取消进行中的请求。
     var onClose: () -> Void = {}
+    var onOpenSettings: () -> Void = {}
     /// 面板内新增表单保存：转发给 AppDelegate，返回 nil 成功。
     var onAddPrompt: (String, [String], String) -> String? = { _, _, _ in nil }
     /// 编辑表单保存：（打开表单时的原条目、名称、关键词、内容）→ 返回 nil 成功。
@@ -169,6 +170,11 @@ final class PromptPanelController: NSObject, NSWindowDelegate {
             model.selection = index - 1
             onCommand(.paste)
             return true
+        case .openSettings:
+            // 先关面板再开设置窗口：面板是浮动窗口，留着会盖住设置窗口
+            hide()
+            onOpenSettings()
+            return true
         case .back:
             // ← 只在结果/生成中阶段有意义（动作面板或 ✨ 跑模型）；列表与搜索框里放行（光标移动）
             guard model.phase != .choosing, model.mode != .prompts || model.runningPrompt != nil else { return false }
@@ -221,6 +227,7 @@ final class PromptPanelController: NSObject, NSWindowDelegate {
             guard let command = PanelKeyRouter.command(
                 keyCode: event.keyCode,
                 commandKey: event.modifierFlags.contains(.command),
+                controlKey: event.modifierFlags.contains(.control),
                 hasMarkedText: composing
             ) else { return event }
             // handle 返回 false 表示该命令在当前场景不适用（如 ← 在搜索框里），事件放行给输入控件

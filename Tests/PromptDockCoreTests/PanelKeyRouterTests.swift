@@ -30,6 +30,14 @@ import Testing
         #expect(PanelKeyRouter.command(keyCode: 18, commandKey: true, hasMarkedText: false) == nil)
     }
 
+    @Test func commaWithControlOrCommandOpensSettings() {
+        // 逗号 keyCode 43：⌃, 与 macOS 惯例 ⌘, 都打开设置；单按逗号是输入内容，放行
+        #expect(PanelKeyRouter.command(keyCode: 43, commandKey: false, controlKey: true, hasMarkedText: false) == .openSettings)
+        #expect(PanelKeyRouter.command(keyCode: 43, commandKey: true, hasMarkedText: false) == .openSettings)
+        #expect(PanelKeyRouter.command(keyCode: 43, commandKey: false, hasMarkedText: false) == nil)
+        #expect(PanelKeyRouter.command(keyCode: 43, commandKey: false, controlKey: true, hasMarkedText: true) == nil)
+    }
+
     @Test func passesThroughWhileInputMethodIsComposing() {
         // 中文输入法组字时，回车/方向键/Esc 交给输入法，不能触发粘贴
         for code: UInt16 in [36, 76, 125, 126, 53, 123] {

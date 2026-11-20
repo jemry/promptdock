@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         panel.onCommand = { [weak self] command in self?.handlePanelCommand(command) }
         panel.onClose = { [weak self] in self?.cancelAction() }
+        panel.onOpenSettings = { [weak self] in self?.menuSettings() }
         panel.onAddPrompt = { [weak self] title, keywords, content in
             guard let self else { return "保存失败" }
             return self.addPromptFromPanel(title: title, keywords: keywords, content: content)

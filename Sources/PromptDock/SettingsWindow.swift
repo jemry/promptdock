@@ -30,7 +30,9 @@ final class SettingsWindowController {
             w.center()
             window = w
         }
-        NSApp.activate()
+        // 从面板（nonactivatingPanel，应用未激活）打开时，协作式 activate() 会被系统拒绝，
+        // 设置窗口压在前台应用后面；与调用历史窗口一样强制激活（2026-11-20 日志实测 appActive=false）
+        NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }
 }
