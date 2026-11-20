@@ -60,6 +60,7 @@ import Testing
         s.llm.provider = "claude"
         s.llm.effort = "high"
         s.network.proxy = ProxySetting(host: "127.0.0.1", port: 7890)
+        s.keepHistory = true
         let body = try JSONSerialization.data(
             withJSONObject: ["reasoning_effort": "none", "flag": true, "n": 3, "s": "true",
                              "list": [1, "a"], "nested": ["k": false]],
@@ -75,6 +76,15 @@ import Testing
         let updated = try ConfigWriter.replacingSettings(in: "version: 1\nprompts: []\n", with: s)
         let parsed = try settings(of: updated)
         #expect(parsed == s)
+    }
+
+    @Test func 改其他设置时keep_history保留() throws {
+        let text = "version: 1\nsettings:\n  keep_history: true\nprompts: []\n"
+        var s = try settings(of: text)
+        #expect(s.keepHistory)
+        s.llm.effort = "high"
+        let updated = try ConfigWriter.replacingSettings(in: text, with: s)
+        #expect(try settings(of: updated).keepHistory)
     }
 
     @Test func 没有settings段时插到version后面() throws {

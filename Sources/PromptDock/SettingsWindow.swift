@@ -228,6 +228,7 @@ struct SettingsView: View {
             .padding(12)
         }
         .frame(minWidth: 780, minHeight: 560)
+        .tint(Color.dockAccent)
     }
 }
 

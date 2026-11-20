@@ -127,6 +127,9 @@ public enum PromptLibraryParser {
                 warnings.append(LoadWarning("settings.network.proxy「\(v)」无效（格式如 http://127.0.0.1:7890），已改为跟随系统代理"))
             }
         }
+        if let v = dict["keep_history"] as? Bool {
+            settings.keepHistory = v
+        }
         return settings
     }
 

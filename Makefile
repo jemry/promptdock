@@ -54,6 +54,7 @@ install: sign
 	open $(INSTALL)
 
 # 发布用安装包：通用二进制（Apple 芯片 + Intel）、临时签名（未经 Apple 公证，见 README「下载安装」）
+# 不能用 PromptDock Dev：CI runner 和下载用户的机器上都没有这张自签名证书
 dmg:
 	$(MAKE) sign SWIFT_FLAGS="--arch arm64 --arch x86_64" SIGN_ID=-
 	lipo -archs $(APP)/Contents/MacOS/PromptDock

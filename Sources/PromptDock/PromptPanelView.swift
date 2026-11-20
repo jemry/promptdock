@@ -2,6 +2,14 @@ import PromptDockCore
 import AppKit
 import SwiftUI
 
+// 应用主题色：低饱和深松绿 #3F7D5B（克制、不荧光，适配暖色毛玻璃背景）
+extension Color {
+    static let dockAccent = Color(red: 63 / 255, green: 125 / 255, blue: 91 / 255)
+}
+extension NSColor {
+    static let dockAccent = NSColor(srgbRed: 63 / 255, green: 125 / 255, blue: 91 / 255, alpha: 1)
+}
+
 struct PromptPanelView: View {
     @ObservedObject var model: PanelModel
     var onActivate: (PanelCommand) -> Void
@@ -18,6 +26,11 @@ struct PromptPanelView: View {
     var onGenerateKeywords: (String, @escaping ([String]) -> Void) -> Void = { _, _ in }
     /// 结果页/生成中点击返回箭头：由外部取消进行中的请求，模型状态由 backToChoosing 处理。
     var onBack: () -> Void = {}
+    /// 🔊 朗读/停止朗读：参数为要读的文本（动作面板读选中原文，结果页读模型输出）。
+    var onToggleSpeech: (String) -> Void = { _ in }
+    /// ⭐ 收藏到 Obsidian 词汇表：（原文、模型解释、音标释义，回调 nil=成功/否则错误信息）。
+    /// 异步：收藏时先用模型把解释提炼成精简要点。
+    var onFavorite: (String, String, PhoneticInfo?, @escaping (String?) -> Void) -> Void = { _, _, _, _ in }
 
     @FocusState private var searchFocused: Bool
     @FocusState private var addTitleFocused: Bool
@@ -32,6 +45,8 @@ struct PromptPanelView: View {
     @State private var keywordRequest = 0
     /// 上一次行点击（时间、条目 id），用于自定义双击检测（单击立即选中不延迟）。
     @State private var lastRowClick: (date: Date, id: String)?
+    /// 鼠标悬停的行：悬停用中性浅底，与键盘选中态区分开。
+    @State private var hoveredID: String?
 
     private var isActionMode: Bool { model.mode != .prompts }
     /// 结果阶段：⌥⇧Space 动作执行中/完成/失败，或 ⌥Space 面板 ✨ 跑模型中。
@@ -46,15 +61,20 @@ struct PromptPanelView: View {
             else if model.isFormActive { formHeader }
             else { searchField }
             if let notice = model.notice {
-                Text(notice)
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16).padding(.bottom, 8)
+                // 克制版提示条：淡灰胶囊 + 次级小字，替代原先的大段橙色文字（视觉过重）
+                HStack(spacing: 4) {
+                    Image(systemName: "info.circle").font(.caption2)
+                    Text(notice).font(.caption)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Capsule().fill(.quaternary.opacity(0.5)))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16).padding(.bottom, 8)
             }
             if let pending = model.pendingDelete, !model.isFormActive, !showsResult { deleteConfirmBar(pending) }
             if isActionMode && !showsResult && !model.isFormActive { selectionBar }
-            Divider()
+            hairline
             if showsResult {
                 resultBody
             } else if model.isFormActive {
@@ -62,15 +82,16 @@ struct PromptPanelView: View {
             } else {
                 HStack(spacing: 0) {
                     resultList.frame(width: 300)
-                    Divider()
+                    verticalHairline
                     preview
                 }
             }
-            Divider()
+            hairline
             footer
         }
         .frame(width: 720, height: 420)
         .background(VisualEffectBackground())
+        .tint(Color.dockAccent)
         .onChange(of: model.focusRequest, initial: true) { searchFocused = true }
         .onChange(of: model.addingPrompt) { keywordRequest += 1; generatingKeywords = false; formFocusChanged() }
         .onChange(of: model.editingPrompt) { keywordRequest += 1; generatingKeywords = false; formFocusChanged() }
@@ -84,15 +105,28 @@ struct PromptPanelView: View {
         }
     }
 
+    /// 极细分隔线：系统 Divider 在毛玻璃上偏白偏重，这里用 6% 前景色。
+    private var hairline: some View {
+        Rectangle().fill(Color.primary.opacity(0.07)).frame(height: 1)
+    }
+    private var verticalHairline: some View {
+        Rectangle().fill(Color.primary.opacity(0.07)).frame(width: 1)
+    }
+
     // MARK: - 选择阶段
 
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: isActionMode ? "wand.and.stars" : "magnifyingglass").foregroundStyle(.secondary)
-            TextField(isActionMode ? "选择要执行的动作…" : "搜索提示词…", text: $model.query)
-                .textFieldStyle(.plain)
-                .font(.system(size: 20))
-                .focused($searchFocused)
+            TextField(
+                isActionMode
+                    ? (model.isInputFallbackMode ? "输入要处理的内容…（↑↓ 选动作，↩ 执行）" : "选择要执行的动作…")
+                    : "搜索提示词…",
+                text: $model.query
+            )
+            .textFieldStyle(.plain)
+            .font(.system(size: 20))
+            .focused($searchFocused)
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
     }
@@ -101,11 +135,70 @@ struct PromptPanelView: View {
         let text = model.selectionText
         let oneLine = text.replacingOccurrences(of: "\n", with: " ⏎ ")
         return HStack(spacing: 6) {
-            Text("选中 \(text.count) 字").font(.caption.weight(.medium))
+            Text("\(model.isInputFallbackMode ? "输入" : "选中") \(text.count) 字").font(.caption.weight(.medium))
             Text(oneLine).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            Spacer()
+            phoneticText
+            // 🔊 固定在最右端不随音标伸缩：听清不认识的词；配合回车执行「解释」类动作边听边看
+            speechButton(text: text, help: model.isSpeaking ? "停止朗读" : "朗读\(model.isInputFallbackMode ? "输入的内容" : "选中的原文")")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16).padding(.bottom, 8)
+    }
+
+    /// 音标 + 简要中文释义（模型异步返回），长在 🔊 左侧，喇叭钉在右端不动。
+    @ViewBuilder private var phoneticText: some View {
+        if let phonetic = model.phonetic {
+            HStack(spacing: 4) {
+                Text(phonetic.ipa)
+                    .font(.system(.caption, design: .monospaced))
+                if let gloss = phonetic.gloss {
+                    Text(gloss).font(.caption)
+                }
+            }
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+    }
+
+    /// 🔊/⏹ 组合按钮：朗读中全局显示 ⏹（无论读的是原文还是结果），点击即停。
+    private func speechButton(text: String, help: String) -> some View {
+        Button { onToggleSpeech(text) } label: {
+            Image(systemName: model.isSpeaking ? "stop.circle" : "speaker.wave.2")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .help(help)
+    }
+
+    /// ⭐ 收藏到 Obsidian 词汇表：提炼中转进度圈，成功后变实心黄星，防重复收藏。
+    private var favoriteButton: some View {
+        Button { favorite() } label: {
+            if model.favoriting {
+                ProgressView().controlSize(.mini)
+            } else {
+                Image(systemName: model.favorited ? "star.fill" : "star")
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(model.favorited ? Color.yellow : .secondary)
+        .disabled(model.favoriting
+                  || model.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        .help(model.favorited ? "已收藏到词汇表" : "收藏到 Obsidian 词汇表（自动提炼精简要点）")
+    }
+
+    private func favorite() {
+        guard !model.favorited, !model.favoriting else { return }
+        model.favoriting = true
+        onFavorite(model.activeInput, model.output, model.phonetic) { error in
+            model.favoriting = false
+            if let error {
+                model.notice = error
+            } else {
+                model.favorited = true
+            }
+        }
     }
 
     private var resultList: some View {
@@ -113,9 +206,13 @@ struct PromptPanelView: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     ForEach(Array(model.results.enumerated()), id: \.element.prompt.id) { index, item in
-                        row(item.prompt, selected: index == model.selection)
+                        row(item.prompt,
+                            selected: index == model.selection,
+                            hovered: hoveredID == item.prompt.id,
+                            number: index < 10 ? index + 1 : nil)
                             .id(item.prompt.id)
                             .contentShape(Rectangle())
+                            .onHover { hovering in hoveredID = hovering ? item.prompt.id : nil }
                             // 不用 onTapGesture(count:2)+onTapGesture 组合：SwiftUI 为区分单双击
                             // 会把单击延迟约 300ms（等双击窗口过期），手感明显卡顿（实测踩坑）。
                             // 改为单击立即选中，300ms 内二次点击同一条才视为双击粘贴。
@@ -158,31 +255,68 @@ struct PromptPanelView: View {
         return isActionMode ? "还没有动作\n在 prompts.yaml 中添加 type: action 的条目" : "还没有提示词"
     }
 
-    private func row(_ prompt: Prompt, selected: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(prompt.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
+    private func row(_ prompt: Prompt, selected: Bool, hovered: Bool, number: Int?) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                // 数字角标：提示可按数字键直选（0 = 第 10 条）；搜索中数字是输入内容，角标隐藏
+                if let number, model.query.isEmpty, model.phase == .choosing, !model.isFormActive, !model.isInputFallbackMode {
+                    Text("\(number == 10 ? 0 : number)")
+                        .font(.caption2.monospaced().weight(.medium))
+                        .foregroundStyle(selected ? Color.dockAccent : Color.secondary.opacity(0.6))
+                        .frame(width: 14)
+                }
+                Text(prompt.title)
+                    .font(.system(size: 14, weight: selected ? .semibold : .medium))
+                    .lineLimit(1)
+            }
             HStack(spacing: 6) {
                 if !prompt.keywords.isEmpty {
                     Text(prompt.keywords.joined(separator: " · "))
-                        .font(.caption).foregroundStyle(selected ? Color.white.opacity(0.85) : .secondary).lineLimit(1)
+                        .font(.caption)
+                        .foregroundStyle(selected ? Color.dockAccent.opacity(0.75) : Color.secondary)
+                        .lineLimit(1)
                 }
                 // ✨：剪贴板内容 + 该提示词直接跑大模型，结果在面板内显示（spec 8.1）。
-                // 动作面板的输入是选区，不显示，避免和剪贴板输入混淆
+                // 动作面板的输入是选区，不显示，避免和剪贴板输入混淆。
+                // 空剪贴板直接禁用：✨ 在行内容易误触，弹警告条太吵，引导进 tooltip
                 if !isActionMode {
                     Button { onRunPrompt(prompt) } label: {
                         Image(systemName: "wand.and.stars")
                             .font(.caption)
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(selected ? Color.white.opacity(0.85) : .secondary)
-                    .help("用大模型处理剪贴板内容")
+                    .foregroundStyle(.secondary)
+                    .disabled(!model.clipboardHasText)
+                    .help(model.clipboardHasText ? "用大模型处理剪贴板内容" : "剪贴板没有文本：先复制要处理的内容（⌘C）")
                 }
             }
         }
-        .foregroundStyle(selected ? Color.white : Color.primary)
+        .foregroundStyle(Color.primary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.accentColor : Color.clear))
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        // 悬停用中性浅底，键盘选中用低饱和绿底 + 内描边 + 左侧圆角指示条，三层都收在同一圆角里
+        .background {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(selected ? Color.dockAccent.opacity(0.13)
+                      : hovered ? Color.primary.opacity(0.055) : Color.clear)
+        }
+        .overlay {
+            if selected {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.dockAccent.opacity(0.18), lineWidth: 0.5)
+            }
+        }
+        .overlay(alignment: .leading) {
+            if selected {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(Color.dockAccent)
+                    .frame(width: 3)
+                    .padding(.vertical, 9)
+                    .padding(.leading, 3)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: selected)
+        .animation(.easeOut(duration: 0.12), value: hovered)
     }
 
     private var preview: some View {
@@ -207,9 +341,20 @@ struct PromptPanelView: View {
                 ProgressView().controlSize(.small)
                 Text(model.isThinking && model.output.isEmpty ? "思考中…" : "生成中…").foregroundStyle(.secondary)
             case .done:
-                Label("完成", systemImage: "checkmark.circle").foregroundStyle(.green)
+                // 克制版状态标签（用户选定方向）：小圆点示状态色，文字用次级灰
+                HStack(spacing: 4) {
+                    Circle().fill(Color.green).frame(width: 4, height: 4)
+                    Text("完成")
+                }
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
             case .failed:
-                Label("失败", systemImage: "xmark.octagon").foregroundStyle(.red)
+                HStack(spacing: 4) {
+                    Circle().fill(Color.red).frame(width: 4, height: 4)
+                    Text("失败")
+                }
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
             case .choosing:
                 EmptyView()
             }
@@ -373,6 +518,14 @@ struct PromptPanelView: View {
         HStack {
             Text(footerLeft).foregroundStyle(.secondary)
             Spacer()
+            if showsResult {
+                favoriteButton
+                    .padding(.trailing, 12)
+                phoneticText
+                    .padding(.trailing, 8)
+                speechButton(text: model.output, help: model.isSpeaking ? "停止朗读" : "朗读结果")
+                    .padding(.trailing, 12)
+            }
             if showsBackButton {
                 Button { onBack() } label: {
                     Image(systemName: "chevron.backward.circle")
@@ -436,10 +589,65 @@ struct PromptPanelView: View {
 struct VisualEffectBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
+        // 固定浅色 vibrant 材质：深色壁纸下 behindWindow 不再把面板拖成灰紫
+        view.appearance = NSAppearance(named: .vibrantLight)
         view.material = .popover
         view.blendingMode = .behindWindow
         view.state = .active
         return view
     }
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
+/// 细滚动条：SwiftUI 在 macOS 上的 ScrollView 底层是 NSScrollView，滚动条样式只能在 AppKit 层替换。
+/// 系统默认滚动条约 15pt 且画一条浅色轨道，在浅灰面板上又粗又白，很突兀（用户反馈）。
+/// 这里收窄到 4pt、不画轨道、thumb 用 3pt 半透明胶囊，融入背景。
+final class ThinScroller: NSScroller {
+    override class func scrollerWidth(for controlSize: NSControl.ControlSize,
+                                      scrollerStyle: NSScroller.Style) -> CGFloat { 4 }
+
+    override var intrinsicContentSize: NSSize {
+        var size = super.intrinsicContentSize
+        size.width = 4
+        return size
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // 不画轨道底色（系统默认那条浅色底就是「白条」的来源）
+    }
+
+    override func drawKnob() {
+        let k = rect(for: .knob)
+        let width: CGFloat = 3
+        let rect = NSRect(x: k.midX - width / 2, y: k.minY + 2,
+                          width: width, height: max(0, k.height - 4))
+        NSColor.secondaryLabelColor.withAlphaComponent(0.5).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: width / 2, yRadius: width / 2).fill()
+    }
+}
+
+/// 递归把视图树里的 NSScrollView 滚动条换成细版。已是细版则跳过，避免 layout 阶段反复赋值触发递归。
+extension NSView {
+    func installThinScrollers() {
+        if let scroll = self as? NSScrollView {
+            if !(scroll.verticalScroller is ThinScroller) {
+                scroll.scrollerStyle = .overlay
+                scroll.drawsBackground = false
+                scroll.backgroundColor = .clear
+                scroll.autohidesScrollers = true
+                scroll.verticalScroller = ThinScroller()
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+        }
+        for sub in subviews { sub.installThinScrollers() }
+    }
+}
+
+/// 面板宿主视图：SwiftUI 会在视图更新时重建内部 NSScrollView，
+/// 所以在每次 layout 后都重新安装细滚动条（内部有幂等判断，不会递归）。
+final class PanelHostingView: NSHostingView<PromptPanelView> {
+    override func layout() {
+        super.layout()
+        installThinScrollers()
+    }
 }

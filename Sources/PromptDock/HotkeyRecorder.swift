@@ -138,7 +138,7 @@ final class HotkeyRecorderView: NSView {
         let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
         NSColor.controlBackgroundColor.setFill()
         path.fill()
-        (isRecording ? NSColor.controlAccentColor : NSColor.separatorColor).setStroke()
+        (isRecording ? NSColor.dockAccent : NSColor.separatorColor).setStroke()
         path.lineWidth = isRecording ? 2 : 1
         path.stroke()
 

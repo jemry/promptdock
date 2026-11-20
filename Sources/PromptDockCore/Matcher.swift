@@ -15,6 +15,9 @@ public enum Matcher {
     static let keywordWeight = 0.9
     static let tagWeight = 0.6
     static let contentWeight = 0.3
+    /// 拼音档权重：低于关键词、高于内容——直接打中文/关键词的命中应排在前。
+    static let pinyinFullWeight = 0.85
+    static let pinyinInitialsWeight = 0.8
     /// frecency 加成上限（结果集内最大 frecency 拿满加成）。
     static let frecencyBonus = 0.3
 
@@ -69,6 +72,14 @@ public enum Matcher {
             (contentWeight, [prompt.content]),
         ]
         var best = 0.0
+        // 中文标题的拼音索引（spec 7.2）：pcwt / paichawenti 都能命中「排查问题」。
+        // 只认相等/前缀/连续子串，不走子序列：拼音串只有字母，ui、ai 这类短查询按子序列几乎处处命中
+        if let pinyin = Pinyin.index(for: prompt.title) {
+            for (weight, text) in [(pinyinFullWeight, pinyin.full), (pinyinInitialsWeight, pinyin.initials)] {
+                let s = score(normalizedQuery: q, text: text)
+                if s >= 0.75 { best = max(best, weight * s) }
+            }
+        }
         for (weight, texts) in candidates where weight > best {
             for text in texts {
                 best = max(best, weight * score(normalizedQuery: q, text: normalize(text)))

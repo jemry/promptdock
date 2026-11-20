@@ -156,6 +156,8 @@ public struct Settings: Sendable, Equatable {
     /// 未配置 providers 时内置一个 Anthropic 官方服务。
     public var providers: [String: ProviderConfig] = [ProviderConfig.defaultAnthropic.name: .defaultAnthropic]
     public var network = NetworkSettings()
+    /// 调用历史（spec 10）：记录成功动作的输入与输出到本地 SQLite。默认关闭（隐私）。
+    public var keepHistory = false
     public init() {}
 }
 

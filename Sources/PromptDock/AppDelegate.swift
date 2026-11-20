@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotkeys = HotkeyManager()
     private let panel = PromptPanelController()
     private let settingsWindow = SettingsWindowController()
+    private let historyWindow = HistoryWindowController()
+    /// 调用历史存储（懒加载，打开失败只记日志不影响主流程）。
+    private var historyStore: HistoryStore?
     private var watcher: FileWatcher?
     private var hotkeyErrors: [UInt32: String] = [:]
     private var registeredHotkeys: [UInt32: String] = [:]
@@ -55,6 +58,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.onRunPrompt = { [weak self] prompt in self?.runPromptFromPanel(prompt) }
         panel.onGenerateKeywords = { [weak self] content, completion in
             self?.generateKeywords(content: content, completion: completion)
+        }
+        panel.onLookupPhonetic = { [weak self] text, completion in
+            self?.lookupPhonetic(text, completion: completion)
+        }
+        panel.onFavorite = { [weak self] source, explanation, phonetic, completion in
+            guard let self else { completion("收藏失败"); return }
+            self.favoriteToVault(source: source, explanation: explanation, phonetic: phonetic, completion: completion)
         }
         settingsWindow.onSave = { [weak self] base, target in self?.saveLibrary(from: base, to: target) }
         settingsWindow.onHotkeyRecording = { [weak self] in self?.setHotkeysPaused($0) }
@@ -238,10 +248,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             提示词内容：
             \(content)
             """
-        Task { [weak self] in
+        Task {
             var words: [String] = []
             do {
-                guard let self else { completion([]); return }
                 let target = try LLMTargetResolver.resolve(
                     prompt: Prompt(id: "_kw", title: "_kw", content: content), settings: settings)
                 let rendered = RenderedAction(system: "", userMessage: instruction, output: .show)
@@ -268,6 +277,138 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             completion(words)
         }
+    }
+
+    /// 🔊 朗读时的音标查询（spec 9.4）：短英文文本发给默认模型要美式 IPA + 简要中文释义，
+    /// 返回经 SpeechPhonetics.normalize 清洗，无效或失败一律回调 nil（不打扰朗读）。
+    private func lookupPhonetic(_ text: String, completion: @escaping (PhoneticInfo?) -> Void) {
+        guard SpeechPhonetics.shouldLookup(text) else {
+            completion(nil)
+            return
+        }
+        let settings = state.library.settings
+        let instruction = """
+            给出下面英文单词或短语的：1）美式音标；2）简要中文意思（不超过 12 个字）。
+            格式：只输出一行，先是 / 包住的音标，空一格接中文意思。缩写词按字母读音标，中文意思给全称。
+            示例：GPU → /ˌdʒiː piː ˈjuː/ 图形处理器
+            不要编号、不要解释、不要其他任何文字。
+
+            文本：
+            \(text)
+            """
+        Task {
+            var info: PhoneticInfo?
+            do {
+                let target = try LLMTargetResolver.resolve(
+                    prompt: Prompt(id: "_ipa", title: "_ipa", content: text), settings: settings)
+                let rendered = RenderedAction(system: "", userMessage: instruction, output: .show)
+                let request = try LLMRequestBuilder.build(
+                    rendered, target: target,
+                    apiKey: KeychainStore.readAPIKey(provider: target.provider.name),
+                    defaultEffort: settings.llm.effort)
+                var output = ""
+                let stream = LLMClient.stream(request, protocol: target.provider.protocolType) {
+                    LLMClient.sessionConfiguration(proxy: settings.network.proxy)
+                }
+                for try await event in stream {
+                    if case .text(let chunk) = event { output += chunk }
+                }
+                info = SpeechPhonetics.normalize(output)
+                Log.info("音标查询完成：\(info == nil ? "无有效结果" : "已获取")")
+            } catch {
+                Log.error("音标查询失败：\(error.localizedDescription)")
+            }
+            completion(info)
+        }
+    }
+
+    /// ⭐ 收藏到 Obsidian 词汇表（spec 9.4）：先用默认模型把解释提炼成精简要点（失败回退原文解释），
+    /// 再按月归档写入；月文件内同标题词条去重。全流程异步，结果经 completion 回报（nil=成功）。
+    private func favoriteToVault(
+        source: String, explanation: String, phonetic: PhoneticInfo?,
+        completion: @escaping (String?) -> Void
+    ) {
+        let trimmedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedExplanation = explanation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSource.isEmpty, !trimmedExplanation.isEmpty else {
+            completion("原文或解释为空：等生成完成再收藏")
+            return
+        }
+        guard let vault = ObsidianVaultLocator.locate() else {
+            completion("没找到 Obsidian 仓库（vault）：确认已安装并打开过 Obsidian")
+            return
+        }
+        let settings = state.library.settings
+        let title = VocabularyNotebook.title(for: trimmedSource)
+        Task { @MainActor in
+            // 提炼：解释压缩成「首行核心释义 + 1-4 条要点」；模型不可用则回退原文解释，收藏不中断
+            var summary: String?
+            do {
+                let instruction = """
+                    把下面的「原文」和「解释」提炼成一张精简词汇卡。要求：
+                    - 第一行：一句话核心释义，不超过 25 个字，不要重复原词本身
+                    - 然后 1-4 个要点，每条一行（以「- 」开头），保留最值得记的信息：常见用法、辨析、易混点
+                    - 中文为主，保留必要的英文术语；不要标题、不要编号、不要客套话，直接输出内容
+
+                    原文：
+                    \(trimmedSource)
+
+                    解释：
+                    \(trimmedExplanation)
+                    """
+                let target = try LLMTargetResolver.resolve(
+                    prompt: Prompt(id: "_fav", title: "_fav", content: trimmedSource), settings: settings)
+                let rendered = RenderedAction(system: "", userMessage: instruction, output: .show)
+                let request = try LLMRequestBuilder.build(
+                    rendered, target: target,
+                    apiKey: KeychainStore.readAPIKey(provider: target.provider.name),
+                    defaultEffort: settings.llm.effort)
+                var text = ""
+                let stream = LLMClient.stream(request, protocol: target.provider.protocolType) {
+                    LLMClient.sessionConfiguration(proxy: settings.network.proxy)
+                }
+                for try await event in stream {
+                    if case .text(let chunk) = event { text += chunk }
+                }
+                summary = Self.condenseSummary(text)
+            } catch {
+                Log.error("收藏提炼失败（回退原文解释）：\(error.localizedDescription)")
+            }
+            do {
+                let dir = vault.appendingPathComponent(VocabularyNotebook.folderName, isDirectory: true)
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let file = dir.appendingPathComponent(VocabularyNotebook.fileName())
+                let existing = try? String(contentsOf: file, encoding: .utf8)
+                let content = existing ?? VocabularyNotebook.template()
+                let entry = VocabularyNotebook.entry(
+                    title: title, phonetic: phonetic,
+                    summary: summary ?? trimmedExplanation)
+                guard let updated = VocabularyNotebook.insert(entry: entry, title: title, into: content) else {
+                    Log.info("词汇表本月已有同标题词条（\(title.count) 字），跳过重复收藏")   // 标题取自选区，日志不记原文
+                    completion("词汇表本月已有「\(title)」，未重复收藏")
+                    return
+                }
+                try updated.write(to: file, atomically: true, encoding: .utf8)
+                Log.info("已收藏到 \(VocabularyNotebook.folderName)/\(VocabularyNotebook.fileName())"
+                         + (summary == nil ? "（未提炼）" : ""))
+                completion(nil)
+            } catch {
+                Log.error("收藏失败：\(error.localizedDescription)")
+                completion("收藏失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// 提炼文本清洗：去空白、去掉模型可能带上的 Markdown 标题行、限制行数（防跑飞）。
+    private static func condenseSummary(_ text: String) -> String? {
+        let lines = text.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { line in
+                guard !line.isEmpty else { return false }
+                return !line.hasPrefix("#")    // 标题行剔除
+            }
+        guard !lines.isEmpty else { return nil }
+        return Array(lines.prefix(8)).joined(separator: "\n")
     }
 
     private func setHotkeysPaused(_ paused: Bool) {
@@ -352,8 +493,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 selection = result.text
                 Log.info("读取选区：\(result.text.count) 字，来源 \(result.source.rawValue)，应用 \(actionTarget?.bundleIdentifier ?? "-")")
             } else {
-                notices.append("未读取到选中文字：请先在应用中选中一段文字")
-                Log.info("未读取到选区，应用 \(actionTarget?.bundleIdentifier ?? "-")")
+                // 读不到选区直接进输入回退模式（placeholder 已说明用法），不再提示「去选中文字」
+                Log.info("未读取到选区（输入回退模式），应用 \(actionTarget?.bundleIdentifier ?? "-")")
             }
         } else {
             notices.append("需要辅助功能权限才能读取选中文字（菜单栏 → 辅助功能权限）")
@@ -426,7 +567,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func runAction(_ prompt: Prompt, selection: String, panelRun: Bool) {
         let model = panel.model
         guard !selection.isEmpty else {
-            model.notice = "没有选中文字，无法执行。请关闭面板，选中文字后再按快捷键"
+            model.notice = "没有可处理的内容：选中文字后再按快捷键，或在上方输入内容"
             return
         }
 
@@ -446,9 +587,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // 请求发出前就失败（缺 Key、服务未定义）：切到结果区显示，避免只有一行小字像「没反应」
             let label = prompt.provider ?? settings.llm.provider
             if panelRun {
-                model.beginPromptRun(prompt, targetLabel: label)
+                model.beginPromptRun(prompt, input: selection, targetLabel: label)
             } else {
-                model.beginAction(prompt, output: rendered.output, targetLabel: label)
+                model.beginAction(prompt, input: selection, output: rendered.output, targetLabel: label)
             }
             model.phase = .failed(error.localizedDescription
                 + "\n\n可以在菜单栏 → API Key 中设置，或修改 prompts.yaml 中的 settings.llm.provider。")
@@ -460,9 +601,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.notice = nil
         let targetLabel = "\(target.provider.name) · \(target.model)"
         if panelRun {
-            model.beginPromptRun(prompt, targetLabel: targetLabel)
+            model.beginPromptRun(prompt, input: selection, targetLabel: targetLabel)
+            // 剪贴板预览（spec 8.1）：✨ 是盲发，执行时在提示条亮出剪贴板前 40 字供核对，
+            // 复制失败/残留旧内容一眼可辨；notice 保持到返回列表，结果阶段随时可回看当时发的是什么
+            let head = selection.prefix(40).replacingOccurrences(of: "\n", with: " ⏎ ")
+            model.notice = "剪贴板 \(selection.count) 字：\(head)\(selection.count > 40 ? "…" : "")"
         } else {
-            model.beginAction(prompt, output: rendered.output, targetLabel: targetLabel)
+            model.beginAction(prompt, input: selection, output: rendered.output, targetLabel: targetLabel)
         }
         record(prompt, .action)
 
@@ -503,6 +648,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     if stopReason == "max_tokens" { self.panel.model.notice = "输出达到长度上限，结果可能不完整" }
                     self.panel.model.phase = .done
                     if rendered.output == .copy { PasteService.copy(self.cleanedOutput()) }
+                    self.recordHistory(title: prompt.title, target: targetLabel, input: selection,
+                                       output: self.panel.model.output)
                 }
             } catch {
                 guard let self, !Task.isCancelled else { return }
@@ -603,6 +750,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         menu.addItem(item("设置…", #selector(menuSettings)))
+        menu.addItem(item("调用历史…", #selector(menuHistory)))
         menu.addItem(item("编辑提示词…", #selector(menuEdit)))
         menu.addItem(item("重新加载", #selector(menuReload)))
         menu.addItem(item("打开数据目录", #selector(menuReveal)))
@@ -661,6 +809,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func menuShowPanel() { showPanel() }
 
     @objc private func menuSettings() { settingsWindow.show(library: state.library) }
+
+    @objc private func menuHistory() {
+        historyWindow.show(
+            entries: historyStoreIfEnabled()?.recent() ?? [],
+            onCopy: { PasteService.copy($0) },
+            onClear: { [weak self] in
+                self?.historyStoreIfEnabled()?.clear()
+                self?.historyWindow.host.rootView = HistoryView(entries: [], onCopy: { _ in }, onClear: {})
+            })
+    }
+
+    /// 调用历史：settings.keep_history 开启时才有存储；首次调用时打开数据库。
+    private func historyStoreIfEnabled() -> HistoryStore? {
+        guard state.library.settings.keepHistory else { return nil }
+        if let historyStore { return historyStore }
+        do {
+            historyStore = try HistoryStore(path: Paths.historyDatabase.path)
+            Log.info("调用历史已开启：\(Paths.historyDatabase.path)")
+            return historyStore
+        } catch {
+            Log.error("调用历史数据库打开失败：\(error.localizedDescription)")
+            return nil   // 失败只影响历史，不影响主流程
+        }
+    }
+
+    private func recordHistory(title: String, target: String, input: String, output: String) {
+        historyStoreIfEnabled()?.add(title: title, target: target, input: input, output: output)
+    }
 
     @objc private func menuSetDefaultProvider(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String, name != state.library.settings.llm.provider else { return }

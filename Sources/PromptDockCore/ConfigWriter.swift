@@ -141,6 +141,10 @@ public enum ConfigWriter {
         if let proxy = s.network.proxy {
             pairs.append(("network", map([("proxy", str("http://\(proxy.host):\(proxy.port)"))])))
         }
+        // 默认关闭，只在开启时写出；漏写会让设置窗口/菜单切换服务时把它静默关掉
+        if s.keepHistory {
+            pairs.append(("keep_history", Node("true")))
+        }
         return try Yams.serialize(node: map([("settings", map(pairs))]), indent: 2, width: -1, allowUnicode: true)
     }
 

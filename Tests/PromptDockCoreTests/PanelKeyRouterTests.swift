@@ -20,6 +20,16 @@ import Testing
         #expect(PanelKeyRouter.command(keyCode: 124, commandKey: false, hasMarkedText: false) == nil)
     }
 
+    @Test func digitKeysMapToSelect() {
+        // 苹果键盘数字键物理布局乱序：1=18、5=23、9=25
+        #expect(PanelKeyRouter.command(keyCode: 18, commandKey: false, hasMarkedText: false) == .select(1))
+        #expect(PanelKeyRouter.command(keyCode: 23, commandKey: false, hasMarkedText: false) == .select(5))
+        #expect(PanelKeyRouter.command(keyCode: 25, commandKey: false, hasMarkedText: false) == .select(9))
+        // 0 映射第 10 条；带修饰键不映射
+        #expect(PanelKeyRouter.command(keyCode: 29, commandKey: false, hasMarkedText: false) == .select(10))
+        #expect(PanelKeyRouter.command(keyCode: 18, commandKey: true, hasMarkedText: false) == nil)
+    }
+
     @Test func passesThroughWhileInputMethodIsComposing() {
         // 中文输入法组字时，回车/方向键/Esc 交给输入法，不能触发粘贴
         for code: UInt16 in [36, 76, 125, 126, 53, 123] {
