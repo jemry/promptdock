@@ -28,6 +28,8 @@ struct PromptPanelView: View {
     var onBack: () -> Void = {}
     /// 🔊 朗读/停止朗读：参数为要读的文本（动作面板读选中原文，结果页读模型输出）。
     var onToggleSpeech: (String) -> Void = { _ in }
+    /// 顶部栏 ✕：丢弃误判的选区，切到输入模式（spec 9.2）。
+    var onDiscardSelection: () -> Void = {}
     /// ⭐ 收藏到 Obsidian 词汇表：（原文、模型解释、音标释义，回调 nil=成功/否则错误信息）。
     /// 异步：收藏时先用模型把解释提炼成精简要点。
     var onFavorite: (String, String, PhoneticInfo?, @escaping (String?) -> Void) -> Void = { _, _, _, _ in }
@@ -131,16 +133,38 @@ struct PromptPanelView: View {
         .padding(.horizontal, 16).padding(.vertical, 14)
     }
 
+    /// 顶部栏（spec 9.2）：两种模式必须一眼可辨。
+    /// 选区模式：「选中 N 字 · 来自 X」+ 摘要 + ✕（误判时一键丢弃）；输入模式：主题绿胶囊突出「直接输入」。
     private var selectionBar: some View {
         let text = model.selectionText
         let oneLine = text.replacingOccurrences(of: "\n", with: " ⏎ ")
+        let inputMode = model.isInputFallbackMode
         return HStack(spacing: 6) {
-            Text("\(model.isInputFallbackMode ? "输入" : "选中") \(text.count) 字").font(.caption.weight(.medium))
-            Text(oneLine).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            if inputMode {
+                Label("直接输入要处理的内容", systemImage: "square.and.pencil")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.dockAccent)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.dockAccent.opacity(0.12)))
+                if !text.isEmpty {
+                    Text("输入 \(text.count) 字").font(.caption).foregroundStyle(.secondary)
+                }
+            } else {
+                Text("选中 \(text.count) 字" + (model.selectionSourceApp.map { " · 来自 \($0)" } ?? ""))
+                    .font(.caption.weight(.medium))
+                    .fixedSize()
+                Text(oneLine).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                Button { onDiscardSelection() } label: {
+                    Image(systemName: "xmark.circle.fill").font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+                .help("不是你要处理的内容？丢弃选区，改为直接输入")
+            }
             Spacer()
             phoneticText
             // 🔊 固定在最右端不随音标伸缩：听清不认识的词；配合回车执行「解释」类动作边听边看
-            speechButton(text: text, help: model.isSpeaking ? "停止朗读" : "朗读\(model.isInputFallbackMode ? "输入的内容" : "选中的原文")")
+            speechButton(text: text, help: model.isSpeaking ? "停止朗读" : "朗读\(inputMode ? "输入的内容" : "选中的原文")")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16).padding(.bottom, 8)

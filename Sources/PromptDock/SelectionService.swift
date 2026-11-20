@@ -8,9 +8,16 @@ enum SelectionService {
 
     enum Source: String { case accessibility, copy }
 
+    /// 读取结果经 SelectionFilter 过滤：命中误判规则（如只有空白）按无选区处理（spec 9.2）。
     static func read() async -> (text: String, source: Source)? {
-        if let text = readViaAccessibility() { return (text, .accessibility) }
-        if let text = await readViaCopy() { return (text, .copy) }
+        if let raw = readViaAccessibility(), let text = SelectionFilter.accept(raw) { return (text, .accessibility) }
+        if let raw = await readViaCopy() {
+            guard let text = SelectionFilter.accept(raw) else {
+                Log.info("降级读取到 \(raw.count) 字但判定为误判（空白），按无选区处理")
+                return nil
+            }
+            return (text, .copy)
+        }
         return nil
     }
 
