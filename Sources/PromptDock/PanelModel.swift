@@ -61,7 +61,7 @@ final class PanelModel: ObservableObject {
     @Published var isSpeaking = false
     /// 当前朗读文本的音标与释义（spec 9.4）：模型异步返回，标在 🔊 左侧；换朗读/返回/重开面板时清空。
     @Published var phonetic: PhoneticInfo?
-    /// 本次结果是否已收藏到 Obsidian 词汇表（spec 9.4）：⭐ 据此变实心。
+    /// 本次结果是否已收藏到词汇表（spec 9.4）：⭐ 据此变实心。
     @Published var favorited = false
     /// 收藏进行中（模型提炼词条正文）：⭐ 转进度圈，防连点。
     @Published var favoriting = false

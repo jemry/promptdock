@@ -145,6 +145,11 @@ public enum ConfigWriter {
         if s.keepHistory {
             pairs.append(("keep_history", Node("true")))
         }
+        // 词汇表配置同理：只写非默认值
+        var vocabulary: [(Node, Node)] = []
+        if let dir = s.vocabulary.dir { vocabulary.append(("dir", str(dir))) }
+        if s.vocabulary.split != .month { vocabulary.append(("split", str(s.vocabulary.split.rawValue))) }
+        if !vocabulary.isEmpty { pairs.append(("vocabulary", map(vocabulary))) }
         return try Yams.serialize(node: map([("settings", map(pairs))]), indent: 2, width: -1, allowUnicode: true)
     }
 

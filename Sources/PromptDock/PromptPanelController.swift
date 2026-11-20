@@ -46,8 +46,8 @@ final class PromptPanelController: NSObject, NSWindowDelegate {
     var onGenerateKeywords: (String, @escaping ([String]) -> Void) -> Void = { _, _ in }
     /// 🔊 朗读时查音标：文本 → 音标与释义（回调，nil=无结果或不适用），由 AppDelegate 实现。
     var onLookupPhonetic: (String, @escaping (PhoneticInfo?) -> Void) -> Void = { _, _ in }
-    /// ⭐ 收藏到 Obsidian 词汇表：（原文、模型解释、音标释义，回调 nil=成功），由 AppDelegate 实现。
-    var onFavorite: (String, String, PhoneticInfo?, @escaping (String?) -> Void) -> Void = { _, _, _, _ in }
+    /// ⭐ 收藏到词汇表：（原文、模型解释、音标释义，回调 nil=成功），由 AppDelegate 实现。
+    var onFavorite: (String, String, PhoneticInfo?, @escaping (FavoriteResult) -> Void) -> Void = { _, _, _, _ in }
     /// 🔊 朗读开关（选中原文 / 模型输出），由内部 SpeechService 实现。
     private let speech = SpeechService()
 
@@ -95,7 +95,7 @@ final class PromptPanelController: NSObject, NSWindowDelegate {
                 self.model.discardSelection()
             },
             onFavorite: { [weak self] source, explanation, phonetic, completion in
-                guard let self else { completion("收藏失败"); return }
+                guard let self else { completion(.failed("收藏失败")); return }
                 self.onFavorite(source, explanation, phonetic, completion)
             }
         ))

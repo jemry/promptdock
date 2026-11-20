@@ -23,7 +23,9 @@ final class SettingsWindowController {
             let w = NSWindow(contentViewController: host)
             w.title = "PromptDock 设置"
             w.styleMask = NSWindow.StyleMask(arrayLiteral: .titled, .closable, .miniaturizable, .resizable)
-            w.setContentSize(NSSize(width: 860, height: 620))
+            // 通用页加了「词汇收藏」分组，默认高度要能一屏放下；小屏不超过可用高度
+            let available = (NSScreen.main?.visibleFrame.height ?? 900) - 60
+            w.setContentSize(NSSize(width: 860, height: min(820, available)))
             w.isReleasedWhenClosed = false
             w.center()
             window = w
@@ -260,8 +262,53 @@ private struct GeneralTab: View {
             Section("网络") {
                 TextField("HTTP 代理", text: $model.general.proxy, prompt: Text("留空跟随系统代理，例如 http://127.0.0.1:7890"))
             }
+            vocabularySection
         }
         .formStyle(.grouped)
+    }
+
+    /// 词汇收藏（spec 9.8）：保存位置（选择 / 自动 / 在 Finder 中显示）+ 文件拆分。
+    private var vocabularySection: some View {
+        let configured = !model.general.vocabularyDir.trimmingCharacters(in: .whitespaces).isEmpty
+        var current = VocabularySettings()
+        current.dir = configured ? model.general.vocabularyDir : nil
+        let dir = VocabularyLocator.directory(for: current)
+        return Section("词汇收藏") {
+            LabeledContent("保存位置") {
+                HStack(spacing: 8) {
+                    Text(configured ? VocabularyLocator.display(dir) : "自动：\(VocabularyLocator.display(dir))")
+                        .foregroundStyle(configured ? .primary : .secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                        .help(dir.path)
+                    Button("选择…") { chooseVocabularyDir() }
+                    Button("自动") { model.general.vocabularyDir = "" }.disabled(!configured)
+                    Button {
+                        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                        NSWorkspace.shared.open(dir)
+                    } label: { Image(systemName: "folder") }
+                    .help("在 Finder 中显示")
+                }
+            }
+            Picker("文件拆分", selection: $model.general.vocabularySplit) {
+                Text("不拆分").tag(VocabularySplit.none)
+                Text("按月").tag(VocabularySplit.month)
+                Text("按天").tag(VocabularySplit.day)
+            }
+            Text("⭐ 收藏的词条以 Markdown 写入该目录。自动：优先 Obsidian 当前仓库下的「词汇表」，没有则用 ~/Documents/PromptDock/词汇表")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func chooseVocabularyDir() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "选择"
+        panel.message = "选择词汇表保存目录"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        model.general.vocabularyDir = VocabularyLocator.display(url)   // 家目录内存 ~ 形式，换机器/用户名也能用
     }
 
     @ViewBuilder
