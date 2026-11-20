@@ -130,6 +130,19 @@ public enum PromptLibraryParser {
         if let v = dict["keep_history"] as? Bool {
             settings.keepHistory = v
         }
+        if let vocabulary = dict["vocabulary"] as? [String: Any] {
+            if let v = string(vocabulary["dir"]) {
+                let trimmed = v.trimmingCharacters(in: .whitespaces)
+                settings.vocabulary.dir = trimmed.isEmpty ? nil : trimmed
+            }
+            if let v = string(vocabulary["split"]) {
+                if let split = VocabularySplit(rawValue: v) {
+                    settings.vocabulary.split = split
+                } else {
+                    warnings.append(LoadWarning("settings.vocabulary.split「\(v)」无效（可选 none/month/day），已按 month 处理"))
+                }
+            }
+        }
         return settings
     }
 

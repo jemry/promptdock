@@ -63,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.lookupPhonetic(text, completion: completion)
         }
         panel.onFavorite = { [weak self] source, explanation, phonetic, completion in
-            guard let self else { completion("收藏失败"); return }
+            guard let self else { completion(.failed("收藏失败")); return }
             self.favoriteToVault(source: source, explanation: explanation, phonetic: phonetic, completion: completion)
         }
         settingsWindow.onSave = { [weak self] base, target in self?.saveLibrary(from: base, to: target) }
@@ -322,23 +322,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// ⭐ 收藏到 Obsidian 词汇表（spec 9.4）：先用默认模型把解释提炼成精简要点（失败回退原文解释），
-    /// 再按月归档写入；月文件内同标题词条去重。全流程异步，结果经 completion 回报（nil=成功）。
+    /// ⭐ 收藏到词汇表（spec 9.4、9.8）：先用默认模型把解释提炼成精简要点（失败回退原文解释），
+    /// 再写入 VocabularyLocator 解析出的目录，按 settings.vocabulary.split 拆分文件、文件内同标题去重。
+    /// 全流程异步，结果经 completion 回报。
     private func favoriteToVault(
         source: String, explanation: String, phonetic: PhoneticInfo?,
-        completion: @escaping (String?) -> Void
+        completion: @escaping (FavoriteResult) -> Void
     ) {
         let trimmedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedExplanation = explanation.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedSource.isEmpty, !trimmedExplanation.isEmpty else {
-            completion("原文或解释为空：等生成完成再收藏")
-            return
-        }
-        guard let vault = ObsidianVaultLocator.locate() else {
-            completion("没找到 Obsidian 仓库（vault）：确认已安装并打开过 Obsidian")
+            completion(.failed("原文或解释为空：等生成完成再收藏"))
             return
         }
         let settings = state.library.settings
+        let split = settings.vocabulary.split
+        let dir = VocabularyLocator.directory(for: settings.vocabulary)
         let title = VocabularyNotebook.title(for: trimmedSource)
         Task { @MainActor in
             // 提炼：解释压缩成「首行核心释义 + 1-4 条要点」；模型不可用则回退原文解释，收藏不中断
@@ -375,26 +374,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Log.error("收藏提炼失败（回退原文解释）：\(error.localizedDescription)")
             }
             do {
-                let dir = vault.appendingPathComponent(VocabularyNotebook.folderName, isDirectory: true)
+                let now = Date()   // 文件名与当天节用同一时刻，跨零点不错位
                 try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                let file = dir.appendingPathComponent(VocabularyNotebook.fileName())
+                let fileName = VocabularyNotebook.fileName(for: now, split: split)
+                let file = dir.appendingPathComponent(fileName)
                 let existing = try? String(contentsOf: file, encoding: .utf8)
-                let content = existing ?? VocabularyNotebook.template()
+                let content = existing ?? VocabularyNotebook.template(for: now, split: split)
                 let entry = VocabularyNotebook.entry(
                     title: title, phonetic: phonetic,
                     summary: summary ?? trimmedExplanation)
-                guard let updated = VocabularyNotebook.insert(entry: entry, title: title, into: content) else {
-                    Log.info("词汇表本月已有同标题词条（\(title.count) 字），跳过重复收藏")   // 标题取自选区，日志不记原文
-                    completion("词汇表本月已有「\(title)」，未重复收藏")
+                guard let updated = VocabularyNotebook.insert(
+                    entry: entry, title: title, into: content, date: now, split: split) else {
+                    Log.info("词汇表 \(fileName) 已有同标题词条（\(title.count) 字），跳过重复收藏")   // 标题取自选区，日志不记原文
+                    completion(.failed("\(fileName) 里已有「\(title)」，未重复收藏"))
                     return
                 }
                 try updated.write(to: file, atomically: true, encoding: .utf8)
-                Log.info("已收藏到 \(VocabularyNotebook.folderName)/\(VocabularyNotebook.fileName())"
-                         + (summary == nil ? "（未提炼）" : ""))
-                completion(nil)
+                let shown = VocabularyLocator.display(file)
+                Log.info("已收藏到 \(shown)" + (summary == nil ? "（未提炼）" : ""))
+                completion(.saved("已收藏到 \(shown)"))
             } catch {
                 Log.error("收藏失败：\(error.localizedDescription)")
-                completion("收藏失败：\(error.localizedDescription)")
+                completion(.failed("收藏失败：\(error.localizedDescription)"))
             }
         }
     }

@@ -28,9 +28,9 @@ struct PromptPanelView: View {
     var onBack: () -> Void = {}
     /// 🔊 朗读/停止朗读：参数为要读的文本（动作面板读选中原文，结果页读模型输出）。
     var onToggleSpeech: (String) -> Void = { _ in }
-    /// ⭐ 收藏到 Obsidian 词汇表：（原文、模型解释、音标释义，回调 nil=成功/否则错误信息）。
+    /// ⭐ 收藏到词汇表（spec 9.8）：（原文、模型解释、音标释义，回调收藏结果）。
     /// 异步：收藏时先用模型把解释提炼成精简要点。
-    var onFavorite: (String, String, PhoneticInfo?, @escaping (String?) -> Void) -> Void = { _, _, _, _ in }
+    var onFavorite: (String, String, PhoneticInfo?, @escaping (FavoriteResult) -> Void) -> Void = { _, _, _, _ in }
 
     @FocusState private var searchFocused: Bool
     @FocusState private var addTitleFocused: Bool
@@ -172,7 +172,7 @@ struct PromptPanelView: View {
         .help(help)
     }
 
-    /// ⭐ 收藏到 Obsidian 词汇表：提炼中转进度圈，成功后变实心黄星，防重复收藏。
+    /// ⭐ 收藏到词汇表：提炼中转进度圈，成功后变实心黄星，防重复收藏。
     private var favoriteButton: some View {
         Button { favorite() } label: {
             if model.favoriting {
@@ -185,18 +185,20 @@ struct PromptPanelView: View {
         .foregroundStyle(model.favorited ? Color.yellow : .secondary)
         .disabled(model.favoriting
                   || model.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        .help(model.favorited ? "已收藏到词汇表" : "收藏到 Obsidian 词汇表（自动提炼精简要点）")
+        .help(model.favorited ? "已收藏到词汇表" : "收藏到词汇表（自动提炼精简要点）")
     }
 
     private func favorite() {
         guard !model.favorited, !model.favoriting else { return }
         model.favoriting = true
-        onFavorite(model.activeInput, model.output, model.phonetic) { error in
+        onFavorite(model.activeInput, model.output, model.phonetic) { result in
             model.favoriting = false
-            if let error {
-                model.notice = error
-            } else {
+            switch result {
+            case .saved(let message):
                 model.favorited = true
+                model.notice = message
+            case .failed(let message):
+                model.notice = message
             }
         }
     }

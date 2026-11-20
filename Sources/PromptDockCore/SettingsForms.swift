@@ -83,6 +83,9 @@ public struct GeneralForm: Sendable, Equatable {
     public var effort: String
     /// 空串表示跟随系统代理。
     public var proxy: String
+    /// 词汇表目录（spec 9.8）：空串表示自动。
+    public var vocabularyDir: String
+    public var vocabularySplit: VocabularySplit
 
     public init(_ s: Settings) {
         promptPanel = s.hotkeys.promptPanel
@@ -91,6 +94,8 @@ public struct GeneralForm: Sendable, Equatable {
         restoreDelayMs = s.paste.restoreDelayMs
         effort = s.llm.effort
         proxy = s.network.proxy.map { "http://\($0.host):\($0.port)" } ?? ""
+        vocabularyDir = s.vocabulary.dir ?? ""
+        vocabularySplit = s.vocabulary.split
     }
 
     public func apply(to s: inout Settings) throws {
@@ -123,6 +128,9 @@ public struct GeneralForm: Sendable, Equatable {
         s.paste.restoreDelayMs = restoreDelayMs
         s.llm.effort = effort
         s.network.proxy = proxySetting
+        let dir = vocabularyDir.trimmingCharacters(in: .whitespaces)
+        s.vocabulary.dir = dir.isEmpty ? nil : dir
+        s.vocabulary.split = vocabularySplit
     }
 }
 

@@ -149,6 +149,18 @@ public struct NetworkSettings: Sendable, Equatable {
     public init() {}
 }
 
+/// 词汇表文件拆分方式（spec 9.8）。
+public enum VocabularySplit: String, Sendable, Equatable, CaseIterable {
+    case none, month, day
+}
+
+/// 词汇表配置（spec 9.8）：dir 为 nil 时按 VocabularyLocation 自动解析。
+public struct VocabularySettings: Sendable, Equatable {
+    public var dir: String?
+    public var split: VocabularySplit = .month
+    public init() {}
+}
+
 public struct Settings: Sendable, Equatable {
     public var hotkeys = HotkeySettings()
     public var paste = PasteSettings()
@@ -158,6 +170,7 @@ public struct Settings: Sendable, Equatable {
     public var network = NetworkSettings()
     /// 调用历史（spec 10）：记录成功动作的输入与输出到本地 SQLite。默认关闭（隐私）。
     public var keepHistory = false
+    public var vocabulary = VocabularySettings()
     public init() {}
 }
 
