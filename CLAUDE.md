@@ -33,7 +33,7 @@ macOS 菜单栏提示词管理器（Swift 6 / SwiftPM，macOS 15+）。⌥Space 
 | 写回 YAML 会丢注释 | 一律走 `ConfigWriter.update(from:to:)`：只重写有变化的顶层段，写前重新解析做自检，并检测外部修改冲突；写入前备份成 `.bak`；配置文件是软链接时写到链接指向的真实文件 |
 | Yams 序列化：列表项顶格；`|+` 结尾会附加 `...`；末尾多个换行用 `|+` 会吞掉段与段之间的空行 | 这些在 `ConfigWriter.serialize` 里都已处理，改动时跑 `ConfigWriterTests` 的往返用例 |
 | NSHostingView 把透明标题栏算作安全区，顶部会露出一条白边 | 面板设置了 `safeAreaRegions = []` |
-| 终端没有辅助功能权限，没法模拟点击或按键 | 用 URL scheme 打开界面后截图验证：`open "promptdock://panel"`、`open "promptdock://settings?tab=general|providers|prompts"`，再用 `CGWindowListCopyWindowInfo` 找窗口号，`screencapture -l <id>` 截图 |
+| 终端没有辅助功能权限，没法模拟点击或按键 | 用 URL scheme 打开界面后截图验证：`open "promptdock://panel"`、`open "promptdock://actions"`（动作面板，会先读前台应用选区）、`open "promptdock://settings?tab=general|providers|prompts"`，再用 `CGWindowListCopyWindowInfo` 找窗口号，`screencapture -l <id>` 截图 |
 | Ollama 的 OpenAI 兼容接口里 `think: false` 不生效 | 关闭思考要用 `extra_body: {reasoning_effort: none}`；DeepSeek 用 `{thinking: {type: disabled}}` |
 
 ## 约定

@@ -88,6 +88,12 @@ final class PromptPanelController: NSObject, NSWindowDelegate {
             },
             onBack: { [weak self] in self?.handleBackFromResult() },
             onToggleSpeech: { [weak self] text in self?.toggleSpeech(text) },
+            onDiscardSelection: { [weak self] in
+                guard let self else { return }
+                self.speech.stop()          // 可能正在朗读被丢弃的选区
+                self.phoneticToken += 1
+                self.model.discardSelection()
+            },
             onFavorite: { [weak self] source, explanation, phonetic, completion in
                 guard let self else { completion("收藏失败"); return }
                 self.onFavorite(source, explanation, phonetic, completion)
@@ -101,11 +107,13 @@ final class PromptPanelController: NSObject, NSWindowDelegate {
         panel.contentView = host
     }
 
-    func show(mode: PanelMode, prompts: [Prompt], frecency: [String: Double], notice: String?) {
+    func show(mode: PanelMode, prompts: [Prompt], frecency: [String: Double], notice: String?,
+              selectionSourceApp: String? = nil) {
         // 打开时读一次剪贴板可跑性：空剪贴板 ✨ 直接禁用，误触不再弹橙色警告（引导进 tooltip）
         model.clipboardHasText = (NSPasteboard.general.string(forType: .string)?
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
-        model.prepare(mode: mode, prompts: prompts, frecency: frecency, notice: notice)
+        model.prepare(mode: mode, prompts: prompts, frecency: frecency, notice: notice,
+                      selectionSourceApp: selectionSourceApp)
         position()
         panel.makeKeyAndOrderFront(nil)
         installKeyMonitor()

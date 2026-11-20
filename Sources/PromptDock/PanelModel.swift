@@ -43,6 +43,8 @@ final class PanelModel: ObservableObject {
     }
 
     @Published private(set) var mode: PanelMode = .prompts
+    /// 选区来自哪个应用（spec 9.2）：顶部栏显示「来自 X」，帮助识别误判。
+    @Published private(set) var selectionSourceApp: String?
     @Published var phase: ActionPhase = .choosing
     @Published var output = ""
     @Published private(set) var activePrompt: Prompt?
@@ -88,8 +90,21 @@ final class PanelModel: ObservableObject {
         return false
     }
 
-    func prepare(mode: PanelMode, prompts: [Prompt], frecency: [String: Double], notice: String?) {
+    /// 顶部栏 ✕（spec 9.2）：选区是误判时丢弃，切到输入模式。输入框里原本是搜索词，一并清空。
+    func discardSelection() {
+        guard case .actions(let text) = mode, !text.isEmpty, phase == .choosing else { return }
+        mode = .actions(selection: "")
+        selectionSourceApp = nil
+        phonetic = nil
+        query = ""          // didSet 触发 recompute：输入模式下列表全量
+        recompute()         // query 本来就为空时 didSet 不改变结果，这里显式刷新一次
+        focusRequest += 1
+    }
+
+    func prepare(mode: PanelMode, prompts: [Prompt], frecency: [String: Double], notice: String?,
+                 selectionSourceApp: String? = nil) {
         self.mode = mode
+        self.selectionSourceApp = selectionSourceApp
         self.allPrompts = prompts
         self.frecency = frecency
         self.notice = notice

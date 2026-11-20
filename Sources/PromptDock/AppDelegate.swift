@@ -81,10 +81,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// promptdock://panel —— 便于脚本或其他工具调起面板。
+    /// promptdock://panel、promptdock://actions —— 便于脚本或其他工具调起面板（也用于截图验证）。
+    /// actions 和 ⌥⇧Space 一样会先读取前台应用的选区。
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls where url.scheme == "promptdock" {
             if url.host == "panel" { showPanel() }
+            if url.host == "actions" { Task { await showActionPanel() } }
             if url.host == "settings" {
                 let tab = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
                     .first { $0.name == "tab" }?.value.flatMap(SettingsTab.init) ?? .general
@@ -507,7 +509,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if state.error != nil { notices.append("配置文件有错误，当前使用上次加载成功的版本") }
 
         panel.show(mode: .actions(selection: selection), prompts: state.library.prompts,
-                   frecency: currentFrecency(), notice: notices.isEmpty ? nil : notices.joined(separator: "\n"))
+                   frecency: currentFrecency(), notice: notices.isEmpty ? nil : notices.joined(separator: "\n"),
+                   selectionSourceApp: selection.isEmpty ? nil : actionTarget?.localizedName)
     }
 
     private func handlePanelCommand(_ command: PanelCommand) {
