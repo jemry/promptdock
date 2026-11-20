@@ -2,6 +2,8 @@ public enum PanelCommand: Sendable, Equatable {
     case moveUp, moveDown, paste, copy, close, back
     /// 数字键 1-9 直选列表第 N 条并触发（仅选择阶段且未在搜索时生效）。
     case select(Int)
+    /// ⌃, / ⌘, 打开设置窗口。
+    case openSettings
 }
 
 /// 面板内按键到命令的映射（spec 8.1）。
@@ -10,8 +12,10 @@ public enum PanelKeyRouter {
     public static let digitKeyCodes: [UInt16] = [18, 19, 20, 21, 23, 22, 26, 28, 25, 29]
 
     /// - Parameter hasMarkedText: 输入法是否正在组字。组字时所有按键交给输入法处理。
-    public static func command(keyCode: UInt16, commandKey: Bool, hasMarkedText: Bool) -> PanelCommand? {
+    public static func command(keyCode: UInt16, commandKey: Bool, controlKey: Bool = false,
+                               hasMarkedText: Bool) -> PanelCommand? {
         guard !hasMarkedText else { return nil }
+        if keyCode == 43, commandKey || controlKey { return .openSettings }   // 逗号
         if !commandKey, let digit = Self.digitKeyCodes.firstIndex(of: keyCode) {
             return .select(digit + 1)   // 数字直选（10 = 0 键）；是否生效由面板按场景判断（搜索中放行给输入框）
         }
